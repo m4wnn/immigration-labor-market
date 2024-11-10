@@ -33,7 +33,7 @@ z_c^{(1)} = \dfrac{1}{N_{c, 1980}} \sum_{s} f_{c, 1980}^{s} \left(I_{2007}^s - I
 ```
 where
 - $`I_{y}^s`$ is the number of immigrants from source region $`s`$ in US in year $`y`$.
-- $`f_{c,1980}^{s}` = \dfrac{I_{c, 1980}^s}{I_{1980}^s}`$ is the share of immigrants from source $` s`$ who are in $`c`$ in year 1980.
+- $`f_{c,1980}^{s} = \dfrac{I_{c, 1980}^s}{I_{1980}^s}`$ is the share of immigrants from source $` s`$ who are in $`c`$ in year 1980.
 
 #### Step III-b
 
