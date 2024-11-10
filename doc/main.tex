@@ -1,0 +1,99 @@
+\documentclass[8pt]{beamer}
+\usepackage{lipsum}
+\usepackage{parskip}
+\usepackage{xcolor}
+\usepackage{tikz} 
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{animate}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{adjustbox}
+\usepackage{multirow}
+\usepackage{makecell}
+
+%%%%% Extra Commands %%%%%
+\newcommand{\E}[1]{\mathbbm{E}\left[#1\right]}
+\newcommand{\indicator}[1]{\boldsymbol{1}_{\{#1\}}}
+\newcommand{\prob}[1]{\mathbbm{P}\left(#1\right)}
+\newcommand{\mse}[1]{\text{MSE}\left(#1\right)}
+\newcommand{\rmse}[1]{\text{RMSE}\left(#1\right)}
+\newcommand{\var}[1]{\text{Var}\left(#1\right)}
+\newcommand{\cov}[1]{\text{Cov}\left(#1\right)}
+\newcommand{\corr}[1]{\text{Corr}\left(#1\right)}
+\newcommand{\convP}{\xrightarrow{\mathbbm{P}}}
+\newcommand{\Exp}[1]{\exp\left(#1\right)}
+\renewcommand{\Vec}[1]{\boldsymbol{#1}}
+\newcommand{\Mat}[1]{\mathbbm{#1}}
+\newcommand{\tr}[1]{\text{tr}\left(#1\right)}
+% Set a background template for all slides:
+% Load theme:
+\usetheme{ucla}
+%
+% Set the UCLA color theme for blocks:
+\colorlet{blockTitleBg}[rgb]{uclaBlueDark}
+\colorlet{blockBodyBg}[rgb]{uclaBlue}
+
+\setbeamercolor{block title}{bg=blockTitleBg!80!white, fg=white}
+\setbeamercolor{block body}{bg=blockBodyBg!20!white, fg=black}
+
+\usebackgroundtemplate{%
+\tikz[overlay,remember picture] \node[opacity=0.1, at=(current page.south east),anchor=south east]{\includegraphics[height=0.4\paperheight]{bruin_bear.png}};
+}
+
+% Set title page values:
+\title{Exploring the Impact of Large Immigrant Inflows on Regional Inequality in the United States}
+\date{Fall 2024}
+\author{
+    Andrea Assenza,
+    Anshruta Thakur,
+    Marlon Morales,
+    Mauricio Vargas,
+    Nikolas Papadatosa
+}
+\location{}
+
+% Turn on slide numbers:
+\showSlideNumber{}
+
+
+\begin{document}
+
+% Title frame:
+\insertTitleSlide
+
+\section{Overview}
+\label{section:overview}
+\begin{frame}{Overview}
+    \tableofcontents
+\end{frame}
+
+% Section 1: Introduction 
+\section{Introduction}
+    \input{sections/introduction.tex}
+
+% Section 3: Data Sources
+\section{Data Description}
+    \input{sections/data.tex}
+% Section 4: Methodology
+\section{Methodology}
+    \input{sections/methodology.tex}
+
+% Section 5: Main Results: Replicated Tables
+\section{Main Results}
+    \input{sections/results.tex}
+    %\subsection{Comparison with the Original Study}
+        %\input{sections/comparison.tex}
+
+% Section 6: Discussion and Conclusions
+\section{Conclusions}
+    \input{sections/conclusions.tex}
+
+% Section 7: Appendix
+\section{Appendix}
+    \input{sections/appendix.tex}
+
+    % Insert a last slide to hide backups
+\insertLastSlide
+
+\end{document}
