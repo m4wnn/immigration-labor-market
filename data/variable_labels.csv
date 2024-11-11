@@ -1,0 +1,17 @@
+Variable,Label
+year,census year
+statefip,state (fips code)
+puma,public use microdata area
+gq,group quarters status
+perwt,person weight
+sex,sex
+age,age
+race,race [general version]
+bpl,birthplace [general version]
+educ,educational attainment [general version]
+empstat,employment status [general version]
+ind1990,"industry, 1990 basis"
+wkswork1,weeks worked last year
+wkswork2,"weeks worked last year, intervalled"
+uhrswork,usual hours worked per week
+incwage,wage and salary income

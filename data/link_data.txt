@@ -1,0 +1,7 @@
+### Data Download Instructions
+
+The data required for this project can be downloaded from the following link:
+
+https://mega.nz/folder/iIU0mKKb#3Fne678Ur-wItxEW4QToSA
+
+Please download the file and save it in the same directory where this text file is located.
