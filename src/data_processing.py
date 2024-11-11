@@ -9,105 +9,93 @@ from econtools import group_id
 # from src.agg import WtSum, WtMean
 
 
-def data_path():
-    file = os.path.dirname(os.path.abspath(__file__))
-    data = os.path.join(file, "..", "data")
-    return data
+class CensusDataPipeline:
+    DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 
+    def __init__(self):
+        pass
 
-def stata_paths():
-    paths = {
-        "census": os.path.join(data_path(), "usa_00137.dta"),
-        "cz_pre": os.path.join(data_path(), "cw_puma1990_czone.dta"),
-        "cz_post": os.path.join(data_path(), "cw_puma2000_czone.dta"),
-        "controls": os.path.join(data_path(), "workfile_china.dta"),
-    }
-    return paths
+    def load_data(self, path_key, convert_categoricals=True):
+        paths = {
+            "census": os.path.join(self.DATA_DIR, "usa_00137.dta"),
+            "cz_pre": os.path.join(self.DATA_DIR, "cw_puma1990_czone.dta"),
+            "cz_post": os.path.join(self.DATA_DIR, "cw_puma2000_czone.dta"),
+            "controls": os.path.join(self.DATA_DIR, "workfile_china.dta"),
+        }
+        return pd.read_stata(paths[path_key], convert_categoricals=convert_categoricals)
 
+    def filter_working_age_population(self):
+        df = pipe(
+            self.load_data("census", convert_categoricals=False),
+            lambda x: x[(x.age >= 16) & (x.age <= 64) & (x.gq <= 2)],
+        )
+        return df
 
-def load_census_data():
-    df = pipe(
-        stata_paths()["census"],
-        lambda x: pd.read_stata(x, convert_categoricals=False),
-        lambda x: x[(x.age >= 16) & (x.age <= 64) & (x.gq <= 2)],
-    )
-    return df
+    def group_by_demographics(self):
+        df = self.filter_working_age_population()
+        groups_cols = ["male", "native", "agebin", "educbin", "white"]
 
+        # Define (128) groups over which we CA:
+        #    - gender (2)
+        #    - US born (2)
+        #    - age bin (4)
+        #    - education bin (4)
+        #    - race bin (2)
 
-def load_cz_pre_data():
-    df = pd.read_stata(stata_paths()["cz_pre"])
-    return df
+        df["male"] = np.where(df.sex == 1, 1, 0)
+        df["native"] = np.where(df.bpl <= 99, 1, 0)
+        df["agebin"] = pd.cut(df.age, bins=[15, 27, 39, 51, 64], labels=False)
+        df["educbin"] = pd.cut(df.educ, bins=[-1, 5, 6, 9, 11], labels=False)
+        df["white"] = np.where(df.race == 1, 1, 0)
+        df["college"] = np.where((df.educ > 9) & (df.educ <= 11), 1, 0)
 
+        df.drop(columns=["age", "educ", "race", "sex"], inplace=True)
 
-def load_cz_post_data():
-    df = pd.read_stata(stata_paths()["cz_post"])
-    return df
+        df = group_id(df, cols=groups_cols, merge=True, name="groups")
+        return df
 
+    def katrina_correction(self):
+        df = self.group_by_demographics()
 
-def census_groups():
-    df = load_census_data()
-    groups_cols = ["male", "native", "agebin", "educbin", "white"]
+        df.loc[(df.statefip == 22) & (df.puma == 77777), "puma"] = 1801
 
-    # Define (128) groups over which we CA:
-    #    - gender (2)
-    #    - US born (2)
-    #    - age bin (4)
-    #    - education bin (4)
-    #    - race bin (2)
+        df["PUMA"] = df["statefip"].astype(str).str.zfill(2) + df["puma"].astype(
+            str
+        ).str.zfill(4)
 
-    df["male"] = np.where(df.sex == 1, 1, 0)
-    df["native"] = np.where(df.bpl <= 99, 1, 0)
-    df["agebin"] = pd.cut(df.age, bins=[15, 27, 39, 51, 64], labels=False)
-    df["educbin"] = pd.cut(df.educ, bins=[-1, 5, 6, 9, 11], labels=False)
-    df["white"] = np.where(df.race == 1, 1, 0)
-    df["college"] = np.where((df.educ > 9) & (df.educ <= 11), 1, 0)
+        df["PUMA"] = df["PUMA"].astype("int")
 
-    df.drop(columns=["age", "educ", "race", "sex"], inplace=True)
+        df = df.rename(columns={"puma": "puma_original"})
 
-    df = group_id(df, cols=groups_cols, merge=True, name="groups")
-    return df
+        return df
 
+    def cz_merge(self):
+        df = self.katrina_correction()
 
-def census_katrina_correction():
-    df = census_groups()
+        df1990 = df[df.year == 1990].merge(
+            self.load_data("cz_pre"),
+            left_on="PUMA",
+            right_on="puma1990",
+        )
 
-    df.loc[(df.statefip == 22) & (df.puma == 77777), "puma"] = 1801
+        df2000 = df[df.year != 1990].merge(
+            self.load_data("cz_post"),
+            left_on="PUMA",
+            right_on="puma2000",
+        )
 
-    df["PUMA"] = df["statefip"].astype(str).str.zfill(2) + df["puma"].astype(
-        str
-    ).str.zfill(4)
+        df = pd.concat([df1990, df2000])
 
-    df["PUMA"] = df["PUMA"].astype("int")
+        df["perwt"] = df["perwt"] * df["afactor"]
 
-    df = df.rename(columns={"puma": "puma_original"})
+        return df
 
-    return df
-
-
-def census_cz_merge():
-    df = census_katrina_correction()
-
-    df1990 = df[df.year == 1990].merge(
-        load_cz_pre_data(),
-        left_on="PUMA",
-        right_on="puma1990",
-    )
-
-    df2000 = df[df.year != 1990].merge(
-        load_cz_post_data(),
-        left_on="PUMA",
-        right_on="puma2000",
-    )
-
-    df = pd.concat([df1990, df2000])
-
-    df["perwt"] = df["perwt"] * df["afactor"]
-
-    return df
+    def run(self):
+        return self.cz_merge()
 
 
 def main():
-    tmp = census_cz_merge()
+    tmp = CensusDataPipeline().run()
     print(tmp)
     print(tmp.dtypes)
     print(tmp.describe().round(0))
