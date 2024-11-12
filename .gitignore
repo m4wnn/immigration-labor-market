@@ -316,3 +316,7 @@ TSWLatexianTemp*
 
 # Ignore temp files form python
 */**/__pycache__
+
+# Outomes csv
+outcomes*.csv
+.vscode
