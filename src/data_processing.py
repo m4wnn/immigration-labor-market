@@ -1,3 +1,4 @@
+# %%
 import os
 import pandas as pd
 import numpy as np
@@ -6,11 +7,14 @@ from toolz import pipe
 from econtools import group_id
 
 # from src.write_variable_labels import write_variable_labels
-# from src.agg import WtSum, WtMean
+from src.agg import WtSum, WtMean
 
 
+# %%
 class CensusDataPipeline:
     DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+    GROUPS_COLS = ["male", "native", "agebin", "educbin", "white"]
+    BY_COLS = ["czone", "year", "groups", *GROUPS_COLS, "college"]
 
     def __init__(self):
         pass
@@ -33,7 +37,6 @@ class CensusDataPipeline:
 
     def group_by_demographics(self):
         df = self.filter_working_age_population()
-        groups_cols = ["male", "native", "agebin", "educbin", "white"]
 
         # Define (128) groups over which we CA:
         #    - gender (2)
@@ -51,7 +54,7 @@ class CensusDataPipeline:
 
         df.drop(columns=["age", "educ", "race", "sex"], inplace=True)
 
-        df = group_id(df, cols=groups_cols, merge=True, name="groups")
+        df = group_id(df, cols=self.GROUPS_COLS, merge=True, name="groups")
         return df
 
     def katrina_correction(self):
@@ -90,15 +93,398 @@ class CensusDataPipeline:
 
         return df
 
+    def employment_status(self):
+        df = self.cz_merge()
+        df["emp"] = np.where(df.empstat == 1, 1, 0)
+        df["unemp"] = np.where(df.empstat == 2, 1, 0)
+        df["nilf"] = np.where(df.empstat == 3, 1, 0)
+        return df
+
+    def labor_force_groups(self):
+        df = self.employment_status()
+        df["manuf"] = np.where(
+            (df.emp == 1) & (df.ind1990 >= 100) & (df.ind1990 < 400), 1, 0
+        )
+        df["nonmanuf"] = np.where(
+            (df.emp == 1) & ((df.ind1990 < 100) | (df.ind1990 >= 400)), 1, 0
+        )
+        return df
+
+    def log_wages(self):
+        df = self.labor_force_groups()
+        # Filling in weeks worked for 2008 ACS (using midpoint):
+        df.loc[df.wkswork2 == 1, "wkswork1"] = 7
+        df.loc[df.wkswork2 == 2, "wkswork1"] = 20
+        df.loc[df.wkswork2 == 3, "wkswork1"] = 33
+        df.loc[df.wkswork2 == 4, "wkswork1"] = 43.5
+        df.loc[df.wkswork2 == 5, "wkswork1"] = 48.5
+        df.loc[df.wkswork2 == 6, "wkswork1"] = 51
+
+        # Log weekly wage:
+        df["lnwkwage"] = np.log(df.incwage / df.wkswork1)
+        df.loc[df["lnwkwage"] == -np.inf, "lnwkwage"] = np.nan
+        return df
+
+    def hours_worked(self):
+        df = self.log_wages()
+
+        # Hours:
+        df["hours"] = df["uhrswork"] * df["wkswork1"]
+
+        df.drop(columns=["empstat", "wkswork2", "incwage"], inplace=True)
+
+        return df
+
+    def agg_WMean(self):
+
+        # columns to take weighted mean
+        self.wmean_cols = ["lnwkwage"]
+
+        df = self.hours_worked()
+
+        df_cgy = WtMean(
+            df, cols=self.wmean_cols, weight_col="perwt", by_cols=self.BY_COLS
+        )
+        return df_cgy
+
+    def agg_WSum(self):
+        # columns to sum
+        self.sum_cols = ["manuf", "nonmanuf", "emp", "unemp", "nilf", "hours"]
+
+        df = self.hours_worked()
+
+        df_cgy = WtSum(
+            df, cols=self.sum_cols, weight_col="perwt", by_cols=self.BY_COLS, outw=True
+        )
+        return df_cgy
+
+    def concat_agg(self):
+        df_cgy = pd.concat(
+            [
+                self.agg_WMean(),
+                self.agg_WSum(),
+            ],
+            axis=1,
+        )
+
+        df_cgy.rename(columns={"perwt": "pop"}, inplace=True)
+        return df_cgy
+
+    def labor_participation_shares(self):
+        df_cgy = self.concat_agg()
+
+        for c in ["manuf", "nonmanuf", "unemp", "nilf"]:
+            df_cgy["{}_share".format(c)] = df_cgy[c] / df_cgy["pop"]
+
+        for c in [*self.sum_cols, "pop"]:
+            df_cgy["ln{}".format(c)] = np.log(df_cgy[c])
+            df_cgy.loc[df_cgy["ln{}".format(c)] == -np.inf, "ln{}".format(c)] = np.nan
+
+        df_cgy = df_cgy.reset_index().set_index(["czone", "year", "groups"])
+        return df_cgy
+
     def run(self):
-        return self.cz_merge()
+        return self.labor_participation_shares()
+
+
+# %%
+
+
+class OutcomesDataPipeline:
+
+    # Initialize CensusDataPipeline and group columns as class-level constants
+    CENSUS_PIPELINE = CensusDataPipeline()
+    GROUPS_COLS = CENSUS_PIPELINE.GROUPS_COLS
+
+    def __init__(self, CA=False):
+        self.CA = CA
+        self._weights = (
+            None  # Cache for the result of weights() to avoid recalculations
+        )
+
+    def weights(self):
+        # Calculate weights only once and store in self._weights for efficiency
+        if self._weights is None:
+            df_cgy = self.CENSUS_PIPELINE.run()
+            df_w = df_cgy.reset_index()[["czone", "year", "groups", "hours"]].copy()
+            df_w = df_w.set_index(["czone", "year", "groups"])
+            df_w = df_w.groupby(
+                level=["czone", "year", "groups"]
+            ).sum()  # Sum hours for duplicate indices
+            df_w = df_w.unstack(level=[1, 2], fill_value=0.0)
+            df_w = df_w.stack(level=[1, 2])
+
+            # Assign weights
+            df_w["weight_cgt"] = df_w["hours"] / df_w.groupby(["czone", "year"])[
+                "hours"
+            ].transform("sum")
+            df_w["weight_cg"] = df_w.groupby(["czone", "groups"])[
+                "weight_cgt"
+            ].transform("mean")
+
+            df_cgy = pd.concat(
+                [
+                    df_cgy,
+                    df_w[["weight_cgt", "weight_cg"]].rename(
+                        columns={
+                            "weight_cg": "weight",
+                            "weight_cgt": "weight_non_adjusted",
+                        }
+                    ),
+                ],
+                axis=1,
+            )
+            self._weights = df_cgy  # Store result in class context to reuse
+
+        return self._weights
+
+    def _get_masks(self, df_cgy):
+        """Generates and returns commonly used boolean masks."""
+        df_reset = df_cgy.reset_index()
+        col_mask = df_reset.college == 1
+        ncol_mask = df_reset.college == 0
+        male_mask = df_reset.male == 1
+        female_mask = df_reset.male == 0
+        native_mask = df_reset.native == 1
+        return col_mask, ncol_mask, male_mask, female_mask, native_mask
+
+    def avg_log_wages(self):
+        # Access cached weights data
+        df_cgy = self.weights()
+        # Generate masks only once
+        col_mask, ncol_mask, male_mask, female_mask, native_mask = self._get_masks(
+            df_cgy
+        )
+
+        def fun(m):
+            return WtMean(
+                df_cgy.reset_index(),
+                cols=["lnwkwage"],
+                weight_col="weight" if self.CA else "weight_non_adjusted",
+                by_cols=["czone", "year"],
+                mask=m,
+            )
+
+        # Concatenate results of various aggregations using masks
+        df_cy = pd.concat(
+            [
+                fun(None),
+                fun(col_mask).rename(columns={"lnwkwage": "lnwkwage_col"}),
+                fun(ncol_mask).rename(columns={"lnwkwage": "lnwkwage_ncol"}),
+                fun(male_mask).rename(columns={"lnwkwage": "lnwkwage_male"}),
+                fun(female_mask).rename(columns={"lnwkwage": "lnwkwage_female"}),
+                fun(col_mask & male_mask).rename(
+                    columns={"lnwkwage": "lnwkwage_col_male"}
+                ),
+                fun(col_mask & female_mask).rename(
+                    columns={"lnwkwage": "lnwkwage_col_female"}
+                ),
+                fun(ncol_mask & male_mask).rename(
+                    columns={"lnwkwage": "lnwkwage_ncol_male"}
+                ),
+                fun(ncol_mask & female_mask).rename(
+                    columns={"lnwkwage": "lnwkwage_ncol_female"}
+                ),
+                fun(native_mask).rename(columns={"lnwkwage": "lnwkwage_native"}),
+                fun(col_mask & native_mask).rename(
+                    columns={"lnwkwage": "lnwkwage_col_native"}
+                ),
+                fun(ncol_mask & native_mask).rename(
+                    columns={"lnwkwage": "lnwkwage_ncol_native"}
+                ),
+            ],
+            axis=1,
+        )
+        return df_cy
+
+    def avg_labor_shares(self):
+        # Access cached weights data
+        df_cgy = self.weights()
+        # Generate masks only once
+        col_mask, ncol_mask, _, _, native_mask = self._get_masks(df_cgy)
+
+        self.share_cols = ["manuf_share", "nonmanuf_share", "unemp_share", "nilf_share"]
+
+        def fun(m):
+            return WtMean(
+                df_cgy.reset_index(),
+                cols=self.share_cols,
+                weight_col="weight" if self.CA else "weight_non_adjusted",
+                by_cols=["czone", "year"],
+                mask=m,
+            )
+
+        # Concatenate results of various aggregations using masks
+        df_cy = pd.concat(
+            [
+                fun(None),
+                fun(col_mask).add_suffix("_col"),
+                fun(ncol_mask).add_suffix("_ncol"),
+                fun(native_mask).add_suffix("_native"),
+                fun(col_mask & native_mask).add_suffix("_col_native"),
+                fun(ncol_mask & native_mask).add_suffix("_ncol_native"),
+            ],
+            axis=1,
+        )
+        return df_cy
+
+    def avg_labor_counts(self):
+        # Access cached weights data
+        df_cgy = self.weights()
+        self.count_cols = [
+            "lnmanuf",
+            "lnnonmanuf",
+            "lnemp",
+            "lnunemp",
+            "lnnilf",
+            "lnpop",
+        ]
+        df_cy = WtMean(
+            df_cgy.reset_index(),
+            cols=self.count_cols,
+            weight_col="weight" if self.CA else "weight_non_adjusted",
+            by_cols=["czone", "year"],
+        )
+        return df_cy
+
+    def concat_avg(self):
+        # Concatenate results from avg_log_wages, avg_labor_shares, and avg_labor_counts
+        df_cy = pd.concat(
+            [self.avg_log_wages(), self.avg_labor_shares(), self.avg_labor_counts()],
+            axis=1,
+        )
+        return df_cy
+
+    def change_10_years(self):
+        df_cy = self.concat_avg()
+        cols = df_cy.columns.to_list()
+
+        # Reshape to wide format:
+        df_cy = df_cy.reset_index().pivot_table(index="czone", columns="year")
+
+        # Compute decadal differences:
+        for c in cols:
+            df_cy["D{}".format(c), 1990] = df_cy[c, 2000] - df_cy[c, 1990]
+            df_cy["D{}".format(c), 2000] = (df_cy[c, 2008] - df_cy[c, 2000]) * (10 / 7)
+        # Reshape back to long format:
+        df_cy = df_cy.stack().drop(columns=cols)
+        return df_cy
+
+    def rename_change_10_years(self):
+        df_cy = self.change_10_years()
+
+        for c in self.share_cols:
+            df_cy["D{}".format(c)] = df_cy["D{}".format(c)] * 100.0
+            df_cy["D{}_col".format(c)] = df_cy["D{}_col".format(c)] * 100.0
+            df_cy["D{}_ncol".format(c)] = df_cy["D{}_ncol".format(c)] * 100.0
+            df_cy["D{}_native".format(c)] = df_cy["D{}_native".format(c)] * 100.0
+            df_cy["D{}_col_native".format(c)] = (
+                df_cy["D{}_col_native".format(c)] * 100.0
+            )
+            df_cy["D{}_ncol_native".format(c)] = (
+                df_cy["D{}_ncol_native".format(c)] * 100.0
+            )
+
+        # Multiply by 100 b/c reports log points:
+        cols_mask = df_cy.columns.str.contains("Dln")
+        for c in df_cy.columns[cols_mask]:
+            df_cy[c] = df_cy[c] * 100.0
+
+        self.ADHnames = {
+            # outcome for Table 3
+            "Dmanuf_share": "d_sh_empl_mfg",
+            # outcomes for Table 5
+            # panel A
+            "Dlnmanuf": "lnchg_no_empl_mfg",
+            "Dlnnonmanuf": "lnchg_no_empl_nmfg",
+            "Dlnunemp": "lnchg_no_unempl",
+            "Dlnnilf": "lnchg_no_nilf",
+            # panel B
+            "Dmanuf_share": "d_sh_empl_mfg",
+            "Dnonmanuf_share": "d_sh_empl_nmfg",
+            "Dunemp_share": "d_sh_unempl",
+            "Dnilf_share": "d_sh_nilf",
+            # panel C
+            "Dmanuf_share_col": "d_sh_empl_mfg_edu_c",
+            "Dnonmanuf_share_col": "d_sh_empl_nmfg_edu_c",
+            "Dunemp_share_col": "d_sh_unempl_edu_c",
+            "Dnilf_share_col": "d_sh_nilf_edu_c",
+            # panel D
+            "Dmanuf_share_ncol": "d_sh_empl_mfg_edu_nc",
+            "Dnonmanuf_share_ncol": "d_sh_empl_nmfg_edu_nc",
+            "Dunemp_share_ncol": "d_sh_unempl_edu_nc",
+            "Dnilf_share_ncol": "d_sh_nilf_edu_nc",
+            # panel (Native)
+            "Dmanuf_share_native": "d_sh_empl_mfg_native",
+            "Dnonmanuf_share_native": "d_sh_empl_nmfg_native",
+            "Dunemp_share_native": "d_sh_unempl_native",
+            "Dnilf_share_native": "d_sh_nilf_native",
+            # panel (Native)
+            "Dmanuf_share_col_native": "d_sh_empl_mfg_edu_c_native",
+            "Dnonmanuf_share_col_native": "d_sh_empl_nmfg_edu_c_native",
+            "Dunemp_share_col_native": "d_sh_unempl_edu_c_native",
+            "Dnilf_share_col_native": "d_sh_nilf_edu_c_native",
+            # panel (Native)
+            "Dmanuf_share_ncol_native": "d_sh_empl_mfg_edu_nc_native",
+            "Dnonmanuf_share_ncol_native": "d_sh_empl_nmfg_edu_nc_native",
+            "Dunemp_share_ncol_native": "d_sh_unempl_edu_nc_native",
+            "Dnilf_share_ncol_native": "d_sh_nilf_edu_nc_native",
+            # outcomes for Table 6
+            "Dlnwkwage": "d_avg_lnwkwage",
+            "Dlnwkwage_col": "d_avg_lnwkwage_c",
+            "Dlnwkwage_ncol": "d_avg_lnwkwage_nc",
+            "Dlnwkwage_male": "d_avg_lnwkwage_m",
+            "Dlnwkwage_female": "d_avg_lnwkwage_f",
+            "Dlnwkwage_col_male": "d_avg_lnwkwage_c_m",
+            "Dlnwkwage_col_female": "d_avg_lnwkwage_c_f",
+            "Dlnwkwage_ncol_male": "d_avg_lnwkwage_nc_m",
+            "Dlnwkwage_ncol_female": "d_avg_lnwkwage_nc_f",
+            "Dlnwkwage_native": "d_avg_lnwkwage_native",
+            "Dlnwkwage_col_native": "d_avg_lnwkwage_c_native",
+            "Dlnwkwage_ncol_native": "d_avg_lnwkwage_nc_native",
+        }
+
+        df_cy.rename(columns=self.ADHnames, inplace=True)
+        return df_cy
+
+    def merge_with_dorn_data(self):
+        df_cy = self.rename_change_10_years()
+
+        df_NCA = self.CENSUS_PIPELINE.load_data("controls")
+
+        # CA data:
+        CA_cols = [v for k, v in self.ADHnames.items()]
+
+        other_cols = df_NCA.columns.difference(CA_cols)
+
+        df_CA = pd.merge(
+            df_cy,
+            df_NCA[other_cols],
+            left_on=["czone", "year"],
+            right_on=["czone", "yr"],
+            how="inner",
+        )
+
+        return df_CA
+
+    def run(self):
+        # Run the full pipeline
+        return self.merge_with_dorn_data()
+
+
+# %%
 
 
 def main():
-    tmp = CensusDataPipeline().run()
-    print(tmp)
-    print(tmp.dtypes)
-    print(tmp.describe().round(0))
+    DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+
+    OutcomesDataPipeline(CA=True).run().hto_csv(
+        os.path.join(DATA_DIR, "outcomes_CA.csv")
+    )
+
+    OutcomesDataPipeline(CA=False).run().to_csv(
+        os.path.join(DATA_DIR, "outcomes_CA.csv")
+    )
 
 
 if __name__ == "__main__":
