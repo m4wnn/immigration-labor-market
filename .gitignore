@@ -319,4 +319,5 @@ TSWLatexianTemp*
 
 # Outomes csv
 outcomes*.csv
+complete_data.csv
 .vscode
