@@ -10,9 +10,9 @@ class ImmigrationEffectFlow(FlowSpec):
 
     @step
     def create_dataset(self):
-        from src.data_processing import CensusDataPipeline
+        from src.data_processing import OutcomesDataPipeline
 
-        data_pipeline = CensusDataPipeline()
+        data_pipeline = OutcomesDataPipeline(CA=False)
         self.data = data_pipeline.run()
 
         self.next(self.fit_instrument_1, self.fit_instrument_2)
