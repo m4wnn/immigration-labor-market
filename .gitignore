@@ -304,3 +304,16 @@ TSWLatexianTemp*
 # option is specified. Footnotes are the stored in a file with suffix Notes.bib.
 # Uncomment the next line to have this generated file ignored.
 #*Notes.bib
+
+# Metaflow records
+.metaflow
+# VSCode config files 
+.vscode
+# Data files
+data/*.do
+data/*.dta
+data/*.csv
+data/*.txt
+data/*.db
+# Python files
+src/__pycache__
