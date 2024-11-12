@@ -5,102 +5,141 @@ import numpy as np
 
 from toolz import pipe
 from econtools import group_id
+from functools import lru_cache
+import logging
+from agg import WtSum, WtMean
 
-# from src.write_variable_labels import write_variable_labels
-from src.agg import WtSum, WtMean
 
-
+# Configuración del logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 # %%
+
+
 class CensusDataPipeline:
+    # Directorio de datos
     DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+    # Columnas para la creación de grupos demográficos
     GROUPS_COLS = ["male", "native", "agebin", "educbin", "white"]
     BY_COLS = ["czone", "year", "groups", *GROUPS_COLS, "college"]
+    # Configuraciones de columnas y binning
+    AGE_BINS = [15, 27, 39, 51, 64]
+    EDUC_BINS = [-1, 5, 6, 9, 11]
 
     def __init__(self):
-        pass
+        logger.info("CensusDataPipeline instance created")
 
     def load_data(self, path_key, convert_categoricals=True):
+        """
+        Load a dataset from the specified path key.
+
+        Parameters:
+        path_key (str): Key indicating which dataset to load.
+        convert_categoricals (bool): Whether to convert categorical variables.
+
+        Returns:
+        DataFrame: Loaded dataset.
+        """
         paths = {
             "census": os.path.join(self.DATA_DIR, "usa_00137.dta"),
             "cz_pre": os.path.join(self.DATA_DIR, "cw_puma1990_czone.dta"),
             "cz_post": os.path.join(self.DATA_DIR, "cw_puma2000_czone.dta"),
             "controls": os.path.join(self.DATA_DIR, "workfile_china.dta"),
         }
+        logger.info(f"Loading data from {paths[path_key]}")
         return pd.read_stata(paths[path_key], convert_categoricals=convert_categoricals)
 
     def filter_working_age_population(self):
-        df = pipe(
-            self.load_data("census", convert_categoricals=False),
-            lambda x: x[(x.age >= 16) & (x.age <= 64) & (x.gq <= 2)],
-        )
+        """
+        Filter dataset for individuals of working age (16-64) and in households.
+
+        Returns:
+        DataFrame: Filtered dataset.
+        """
+        df = self.load_data("census", convert_categoricals=False)
+        df = df[(df.age >= 16) & (df.age <= 64) & (df.gq <= 2)]
+        logger.info("Filtered working age population")
         return df
 
     def group_by_demographics(self):
-        df = self.filter_working_age_population()
+        """
+        Group population by demographic bins.
 
-        # Define (128) groups over which we CA:
-        #    - gender (2)
-        #    - US born (2)
-        #    - age bin (4)
-        #    - education bin (4)
-        #    - race bin (2)
+        Returns:
+        DataFrame: Grouped dataset with additional demographic columns.
+        """
+        df = self.filter_working_age_population()
 
         df["male"] = np.where(df.sex == 1, 1, 0)
         df["native"] = np.where(df.bpl <= 99, 1, 0)
-        df["agebin"] = pd.cut(df.age, bins=[15, 27, 39, 51, 64], labels=False)
-        df["educbin"] = pd.cut(df.educ, bins=[-1, 5, 6, 9, 11], labels=False)
+        df["agebin"] = pd.cut(df.age, bins=self.AGE_BINS, labels=False)
+        df["educbin"] = pd.cut(df.educ, bins=self.EDUC_BINS, labels=False)
         df["white"] = np.where(df.race == 1, 1, 0)
         df["college"] = np.where((df.educ > 9) & (df.educ <= 11), 1, 0)
 
         df.drop(columns=["age", "educ", "race", "sex"], inplace=True)
 
         df = group_id(df, cols=self.GROUPS_COLS, merge=True, name="groups")
+        logger.info("Grouped population by demographics")
         return df
 
     def katrina_correction(self):
+        """
+        Apply Katrina correction to PUMA codes for affected areas.
+
+        Returns:
+        DataFrame: Dataset with corrected PUMA codes.
+        """
         df = self.group_by_demographics()
-
         df.loc[(df.statefip == 22) & (df.puma == 77777), "puma"] = 1801
-
         df["PUMA"] = df["statefip"].astype(str).str.zfill(2) + df["puma"].astype(
             str
         ).str.zfill(4)
-
         df["PUMA"] = df["PUMA"].astype("int")
-
         df = df.rename(columns={"puma": "puma_original"})
-
+        logger.info("Applied Katrina correction")
         return df
 
     def cz_merge(self):
+        """
+        Merge Census data with commuting zone data.
+
+        Returns:
+        DataFrame: Dataset with commuting zone merged.
+        """
         df = self.katrina_correction()
-
         df1990 = df[df.year == 1990].merge(
-            self.load_data("cz_pre"),
-            left_on="PUMA",
-            right_on="puma1990",
+            self.load_data("cz_pre"), left_on="PUMA", right_on="puma1990"
         )
-
         df2000 = df[df.year != 1990].merge(
-            self.load_data("cz_post"),
-            left_on="PUMA",
-            right_on="puma2000",
+            self.load_data("cz_post"), left_on="PUMA", right_on="puma2000"
         )
-
         df = pd.concat([df1990, df2000])
-
         df["perwt"] = df["perwt"] * df["afactor"]
-
+        logger.info("Merged with commuting zone data")
         return df
 
     def employment_status(self):
+        """
+        Determine employment status: employed, unemployed, and not in labor force.
+
+        Returns:
+        DataFrame: Dataset with employment status columns.
+        """
         df = self.cz_merge()
         df["emp"] = np.where(df.empstat == 1, 1, 0)
         df["unemp"] = np.where(df.empstat == 2, 1, 0)
         df["nilf"] = np.where(df.empstat == 3, 1, 0)
+        logger.info("Assigned employment status")
         return df
 
     def labor_force_groups(self):
+        """
+        Categorize labor force into manufacturing and non-manufacturing.
+
+        Returns:
+        DataFrame: Dataset with manufacturing and non-manufacturing columns.
+        """
         df = self.employment_status()
         df["manuf"] = np.where(
             (df.emp == 1) & (df.ind1990 >= 100) & (df.ind1990 < 400), 1, 0
@@ -108,82 +147,109 @@ class CensusDataPipeline:
         df["nonmanuf"] = np.where(
             (df.emp == 1) & ((df.ind1990 < 100) | (df.ind1990 >= 400)), 1, 0
         )
+        logger.info("Categorized labor force groups")
         return df
 
     def log_wages(self):
+        """
+        Calculate log weekly wages based on income and weeks worked.
+
+        Returns:
+        DataFrame: Dataset with log weekly wage column.
+        """
         df = self.labor_force_groups()
-        # Filling in weeks worked for 2008 ACS (using midpoint):
         df.loc[df.wkswork2 == 1, "wkswork1"] = 7
         df.loc[df.wkswork2 == 2, "wkswork1"] = 20
         df.loc[df.wkswork2 == 3, "wkswork1"] = 33
         df.loc[df.wkswork2 == 4, "wkswork1"] = 43.5
         df.loc[df.wkswork2 == 5, "wkswork1"] = 48.5
         df.loc[df.wkswork2 == 6, "wkswork1"] = 51
-
-        # Log weekly wage:
         df["lnwkwage"] = np.log(df.incwage / df.wkswork1)
         df.loc[df["lnwkwage"] == -np.inf, "lnwkwage"] = np.nan
+        logger.info("Calculated log wages")
         return df
 
+    @lru_cache(maxsize=None)
     def hours_worked(self):
+        """
+        Calculate total hours worked based on weekly hours and weeks worked.
+
+        Returns:
+        DataFrame: Dataset with hours worked column.
+        """
         df = self.log_wages()
-
-        # Hours:
         df["hours"] = df["uhrswork"] * df["wkswork1"]
-
         df.drop(columns=["empstat", "wkswork2", "incwage"], inplace=True)
-
+        logger.info("Calculated hours worked")
         return df
 
     def agg_WMean(self):
+        """
+        Calculate weighted mean for specific columns.
 
-        # columns to take weighted mean
+        Returns:
+        DataFrame: Dataset with weighted mean calculations.
+        """
         self.wmean_cols = ["lnwkwage"]
-
         df = self.hours_worked()
-
         df_cgy = WtMean(
             df, cols=self.wmean_cols, weight_col="perwt", by_cols=self.BY_COLS
         )
+        logger.info("Aggregated weighted mean")
         return df_cgy
 
     def agg_WSum(self):
-        # columns to sum
+        """
+        Calculate weighted sum for specified columns.
+
+        Returns:
+        DataFrame: Dataset with weighted sum calculations.
+        """
         self.sum_cols = ["manuf", "nonmanuf", "emp", "unemp", "nilf", "hours"]
-
         df = self.hours_worked()
-
         df_cgy = WtSum(
             df, cols=self.sum_cols, weight_col="perwt", by_cols=self.BY_COLS, outw=True
         )
+        logger.info("Aggregated weighted sum")
         return df_cgy
 
     def concat_agg(self):
-        df_cgy = pd.concat(
-            [
-                self.agg_WMean(),
-                self.agg_WSum(),
-            ],
-            axis=1,
-        )
+        """
+        Concatenate weighted mean and weighted sum aggregations.
 
+        Returns:
+        DataFrame: Concatenated aggregation dataset.
+        """
+        df_cgy = pd.concat([self.agg_WMean(), self.agg_WSum()], axis=1)
         df_cgy.rename(columns={"perwt": "pop"}, inplace=True)
+        logger.info("Concatenated aggregated data")
         return df_cgy
 
     def labor_participation_shares(self):
+        """
+        Calculate labor participation shares and logarithmic values for labor data.
+
+        Returns:
+        DataFrame: Final dataset with labor shares and log-transformed columns.
+        """
         df_cgy = self.concat_agg()
-
         for c in ["manuf", "nonmanuf", "unemp", "nilf"]:
-            df_cgy["{}_share".format(c)] = df_cgy[c] / df_cgy["pop"]
-
+            df_cgy[f"{c}_share"] = df_cgy[c] / df_cgy["pop"]
         for c in [*self.sum_cols, "pop"]:
-            df_cgy["ln{}".format(c)] = np.log(df_cgy[c])
-            df_cgy.loc[df_cgy["ln{}".format(c)] == -np.inf, "ln{}".format(c)] = np.nan
-
+            df_cgy[f"ln{c}"] = np.log(df_cgy[c])
+            df_cgy.loc[df_cgy[f"ln{c}"] == -np.inf, f"ln{c}"] = np.nan
         df_cgy = df_cgy.reset_index().set_index(["czone", "year", "groups"])
+        logger.info("Calculated labor participation shares")
         return df_cgy
 
     def run(self):
+        """
+        Run the entire pipeline and return the final aggregated dataset.
+
+        Returns:
+        DataFrame: Final dataset.
+        """
+        logger.info("Running CensusDataPipeline")
         return self.labor_participation_shares()
 
 
