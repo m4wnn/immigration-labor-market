@@ -42,7 +42,7 @@ plt.rcParams['font.family'] = 'serif'
 
 # %%
 mainp = os.path.dirname(os.path.abspath(__file__))
-
+mainp
 # %% [markdown]
 # ## Prepare the Data
 
@@ -52,14 +52,14 @@ mainp = os.path.dirname(os.path.abspath(__file__))
 # %%
 # Take a look at column definitions:
 column_definition = pd.read_stata(
-    os.path.join(mainp, 'data', 'usa_00121.dta'),
+    os.path.join(mainp, '..', 'data', 'usa_00121.dta'),
     iterator=True
 ).variable_labels()
 column_definition
 
 # %%
 df = pd.read_stata(
-    os.path.join(mainp, 'data', 'usa_00121.dta'),
+    os.path.join(mainp, '..','data', 'usa_00121.dta'),
     convert_categoricals=False
 )
 # Keep those aged 20-60 and not in group quarters:
@@ -92,7 +92,7 @@ df2008['PUMA'] = df2008['PUMA'].astype('int')
 df2008 = pd.merge(
     df2008,
     pd.read_stata(
-        os.path.join(mainp, 'data', 'cw_puma2000_czone.dta'),
+        os.path.join(mainp, '..','data', 'cw_puma2000_czone.dta'),
     ),
     left_on='PUMA', right_on='puma2000'
 )
@@ -108,7 +108,7 @@ df1980['ctygrp1980'] = pd.to_numeric(df1980['ctygrp1980'])
 df1980 = pd.merge(
     df1980,
     pd.read_stata(
-        os.path.join(mainp, 'data', 'cw_ctygrp1980_czone_corr.dta'),
+        os.path.join(mainp, '..', 'data', 'cw_ctygrp1980_czone_corr.dta'),
     ),
     on='ctygrp1980'
 )
@@ -126,21 +126,6 @@ df
 
 # %%
 imm = df.copy()
-
-# Drop US birth and n.e.c. and missing (etc.):
-imm = imm[(imm.bpl>120) & (imm.bpl<900)]
-
-# Create aggregate regions given inconsistencies in codes across time:
-imm.loc[(imm.bpl>=150)&(imm.bpl<200),'nativity'] = 150
-imm.loc[imm.bpl==200,'nativity'] = 200
-imm.loc[imm.bpl==210,'nativity'] = 210
-imm.loc[imm.bpl==250,'nativity'] = 250
-imm.loc[imm.bpl==260,'nativity'] = 260
-imm.loc[imm.bpl==300,'nativity'] = 300
-imm.loc[(imm.bpl>=400)&(imm.bpl<410),'nativity'] = 400
-imm.loc[(imm.bpl>=410)&(imm.bpl<415),'nativity'] = 410
-imm.loc[(imm.bpl>=420)&(imm.bpl<=429),'nativity'] = 420
-imm.loc[(imm.bpl>=430)&(imm.bpl<=440),'nativity'] = 430
 imm.loc[(imm.bpl>=450)&(imm.bpl<=459),'nativity'] = 450
 imm.loc[(imm.bpl>=460)&(imm.bpl<=465),'nativity'] = 460
 imm.loc[imm.bpl==499,'nativity'] = 499
@@ -193,15 +178,18 @@ for y in [1980,2008]:
 #Compute the time differences:
 for c in ['I_s','I_c']:
     imm['D{}'.format(c)] = imm[c,2008] - imm[c,1980]
+    imm['{}_80'.format(c)] = imm[c,1980]
 
 # %%
 # Construct numerator of shock and instrument:
 imm['fDI_s'] = imm['DI_s'] * imm['share_cs80',1980]
 
-num_c = pd.concat([imm.groupby(level=['czone'])['DI_c'].max(),
+num_c = pd.concat([
+    imm.groupby(level=['czone'])['DI_c'].max(),
+    imm.groupby(level=['czone'])['I_c_80'].max(),
                    imm.groupby(level=['czone'])['fDI_s'].sum()
                   ], axis=1)
-del imm
+imm
 
 # %%
 num_c.head()
@@ -229,7 +217,7 @@ df_c = pd.concat([
     MySum(is_1980 & is_emp, 'emp_80'),
     MySum(is_1980 & is_col, 'col_80'),
     MySum(is_1980 & is_fborn, 'fborn_80'),
-    MySum(is_1980 & (df.bpl<900), 'fborn_denom_80')
+    MySum(is_1980 & (df.bpl<900), 'fborn_denom_80'),
 ], axis=1)
 
 df_c['manuf_share_80'] = df_c.manuf_80/df_c.emp_80         # manufacturing share of employed
@@ -284,7 +272,8 @@ for y in [1980,2008]:
 df_c = pd.concat([num_c, df_c], axis=1)
 
 df_c['x'] = df_c['DI_c']/df_c['pop_80']
-df_c['z'] = df_c['fDI_s']/df_c['pop_80']
+df_c['z_1'] = df_c['fDI_s']/df_c['pop_80']
+df_c['z_2'] = df_c['fDI_s']/df_c['I_c_80']
 df_c.drop(columns=['DI_c','fDI_s'], inplace=True)
 
 
@@ -293,7 +282,7 @@ for v in ['ln_wage','unemp_rate','nilf_rate']:
     df_c.drop(columns=['{}_2008'.format(v),'{}_1980'.format(v)], inplace=True)
 
 # Merge in state associated with each czone for clustering
-df_c = pd.merge(df_c, pd.read_stata(os.path.join(mainp,'data','cz_state.dta')),
+df_c = pd.merge(df_c, pd.read_stata(os.path.join(mainp,'..', 'data','cz_state.dta')),
                 on='czone', how='left')
 # Assign Alaska and Hawaii the same cluster:
 df_c.loc[df_c.statefip.isnull(), 'statefip'] = 99
@@ -308,3 +297,5 @@ df_c.loc[df_c.statefip.isnull(), 'statefip'] = 99
 
 # %%
 df_c
+# %%
+df_c.to_csv(os.path.join(mainp, '..', 'data', 'data.csv'))
