@@ -3,7 +3,7 @@ import pandas as pd
 from econtools import group_id
 import numpy as np
 import os
-
+from statsmodels.api import add_constant
 from functools import cached_property
 
 
@@ -341,8 +341,11 @@ class DataPipeline:
     def _cz_clustering(self):
         return pd.read_stata(os.path.join(self.PATHS.DATA_PATH, "cz_state.dta"))
 
-    def load_data(self):
+    def load_data(self, add_const=False):
         self._outcomes = self._outcomes[["Dln_wage", "Dunemp_rate", "Dnilf_rate"]]
+        if add_const:
+            self._controls = add_constant(self._controls)
+
         df_c = pd.concat(
             [
                 self._shock,
