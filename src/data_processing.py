@@ -342,10 +342,11 @@ class DataPipeline:
         return pd.read_stata(os.path.join(self.PATHS.DATA_PATH, "cz_state.dta"))
 
     def load_data(self):
+        self._outcomes = self._outcomes[["Dln_wage", "Dunemp_rate", "Dnilf_rate"]]
         df_c = pd.concat(
             [
                 self._shock,
-                self._outcomes[["Dln_wage", "Dunemp_rate", "Dnilf_rate"]],
+                self._outcomes,
                 self._controls,
                 self._instruments,
             ],
