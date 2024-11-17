@@ -1,0 +1,17 @@
+name: imm-mk-env
+channels:
+  - conda-forge
+dependencies:
+  - econtools
+  - ipykernel
+  - ipython
+  - linearmodels
+  - matplotlib
+  - numpy
+  - pip
+  - python
+  - rich
+  - statsmodels
+  - toolz
+  - pip:
+      - stargazer

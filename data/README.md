@@ -5,7 +5,7 @@ This project requires external data to run correctly. Please follow the steps be
 ## Data Download
 
 The data is available at the following link:  
-[Data Download Link](https://mega.nz/folder/iIU0mKKb#3Fne678Ur-wItxEW4QToSA)
+[Data Download Link](https://mega.nz/folder/jAcwGAaJ#4qkddMkyZpSuqj5KvxNZZA)
 
 ## Instructions
 
