@@ -191,7 +191,7 @@ class DataPipeline:
         return num_c
 
     @cached_property
-    def _controls(self):
+    def _constructed_variables(self):
         # #### Construct denominator of key shock and instrument + controls + outcomes
         df = self.CENSUS.get_data().copy()
 
@@ -231,6 +231,19 @@ class DataPipeline:
             df_c.fborn_80 / df_c.fborn_denom_80
         )  # foreign-born share of employed
         return df_c
+
+    @cached_property
+    def _controls(self):
+        df_c = self._constructed_variables
+        return df_c[
+            [
+                "manuf_share_80",
+                "female_share_80",
+                "col_share_80",
+                "lnpop_80",
+                "fborn_share_80",
+            ]
+        ]
 
     @cached_property
     def _outcomes(self):
@@ -316,7 +329,11 @@ class DataPipeline:
     def _shock(self):
         ## Construct the shock and the instrument
         df_c = pd.concat(
-            [self._numerator_shock_and_instrument, self._outcomes, self._controls],
+            [
+                self._numerator_shock_and_instrument,
+                self._outcomes,
+                self._constructed_variables,
+            ],
             axis=1,
         )
 
@@ -328,7 +345,11 @@ class DataPipeline:
     def _instruments(self):
         ## Construct the shock and the instrument
         df_c = pd.concat(
-            [self._numerator_shock_and_instrument, self._outcomes, self._controls],
+            [
+                self._numerator_shock_and_instrument,
+                self._outcomes,
+                self._constructed_variables,
+            ],
             axis=1,
         )
 
@@ -343,6 +364,7 @@ class DataPipeline:
 
     def load_data(self, add_const=False):
         self._outcomes = self._outcomes[["Dln_wage", "Dunemp_rate", "Dnilf_rate"]]
+
         if add_const:
             self._controls = add_constant(self._controls)
 
