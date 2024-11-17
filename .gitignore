@@ -317,3 +317,4 @@ data/*.txt
 data/*.db
 # Python files
 src/__pycache__
+iv_results.pkl
