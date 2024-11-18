@@ -1,4 +1,58 @@
 \begin{frame}
     \frametitle{Main Results}
-    \framesubtitle{Instrumental Relevance Test}
+    \framesubtitle{Instrumental Relevance}
+
+    \begin{table}[ht]
+        \centering
+        \caption{First-Stage 2SLS Results Comparing Instruments (Standard Card Instrument vs. Predicted Immigrant Growth Rate)}
+        \label{tab:combined_regression}
+        \resizebox{0.9\textwidth}{!}{
+            \begin{tabular}{rcccccc}
+                \toprule
+                &\multicolumn{6}{c}{Endogenous Variable: Immigrant Inflow (1980-2008)} \\
+                \cmidrule(lr){2-7}
+                %& \multicolumn{3}{c}{(a) Standard Card Instrument} & \multicolumn{3}{c}{(b) Predicted Immigrant Growth Rate} \\
+                %\cmidrule(lr){2-4} \cmidrule(lr){5-7} 
+                                                                              & (1)      & (2)       & (3)       & (4)       & (5)       & (6)       \\
+                %Shea's $R^2$                                                  & 0.4639    & 0.3523    & 0.2225    & 0.0288   & 0.0308    & 0.0117    \\
+                \cmidrule(lr){1-1} \cmidrule(lr){2-4} \cmidrule(lr){5-7} 
+                \bf{Partial F Statistic}                                    & 23.684    & 18.075    & 25.937    & 4.3321   & 6.2338    & 1.8886    \\
+                %P-value                                                       & 1.135e-06 & 2.124e-05 & 3.528e-07 & 0.0374   & 0.0125    & 0.1694    \\
+                \bf{P-value}                                                & 0.000    & 0.000      & 0.000     & 0.0374   & 0.0125    & 0.1694    \\
+                %Distribution                                                  &$\chi^2(1)$&$\chi^2(1)$&$\chi^2(1)$&$\chi^2(1)$&$\chi^2(1)$&$\chi^2(1)$\\
+                \cmidrule(lr){1-1} \cmidrule(lr){2-4} \cmidrule(lr){5-7} 
+                %\midrule
+                %Constant                                                      & 0.0041    & 0.0028   & -0.1522   & 0.0005   & -0.0098   & -0.2089   \\
+                %                                                              & (1.1170)  & (0.8756) & (-5.8486) & (0.0543) & (-1.1017) & (-6.3276) \\
+                Share of employment in manufacturing in 1980                  &                 &                 & -0.0439         &                &                 & -0.0488         \\
+                                                                              &                 &                 & \small(-1.7340) &                &                 & \small(-1.8829) \\
+                Share of employment among women in 1980                       &                 &                 & 0.2468          &                &                 & 0.3099          \\
+                                                                              &                 &                 & \small(3.3941)  &                &                 & \small(3.1035)  \\
+                Share of the college-educated population in 1980              &                 &                 & 0.1055          &                &                 & 0.2112          \\
+                                                                              &                 &                 & \small(1.4469)  &                &                 & \small(2.6749)  \\
+                Logarithm of total population in 1980                         &                 &                 & 0.0051          &                & 0.4061          & 0.0064          \\
+                                                                              &                 &                 & \small(3.6634)  &                & \small(2.0046)  & \small(2.9514)  \\
+                Share of employment among the foreign-born population in 1980 &                 & 0.0922          & 0.0714          &                & 0.4061          & 0.2522          \\
+                                                                              &                 & \small(1.1668)  & \small(1.5694)  &                & \small(2.0046)  & \small(1.8331)  \\
+                \bf{Standard Card Instrument}                                 & 0.6990          & 0.6472          & 0.4694          &                &                 &                 \\
+                                                                              & \small(4.8666)  & small(4.2514)   & \small(5.0928)  &                &                 &                 \\
+                \bf{Predicted Immigrant Growth Rate}                          &                 &                 &                 & 0.0098         & 0.0092          & 0.0047          \\
+                                                                              &                 &                 &                 & \small(2.0814) & \small(2.4967)  & \small(1.3743)  \\
+                \cmidrule(lr){1-1} \cmidrule(lr){2-4} \cmidrule(lr){5-7} 
+                %\midrule
+                $R^2$                                                         & 0.4639          & 0.4705          & 0.5751          & 0.0288         & 0.2077          & 0.4598    \\
+                Partial $R^2$                                                 & 0.4639          & 0.3523          & 0.2225          & 0.0288         & 0.0308          & 0.0117    \\
+                \bottomrule
+            \end{tabular}
+        }
+        \vspace{0.2cm}
+        
+        \begin{minipage}{\linewidth}
+            \tiny
+            \textit{Notes:} $N = 741$. Robust standard errors in parentheses are clustered on state. All regressions include a constant.
+        \end{minipage}
+    \end{table}
+    
+    
+
 \end{frame}
