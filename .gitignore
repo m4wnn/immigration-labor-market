@@ -313,6 +313,7 @@ TSWLatexianTemp*
 data/*.do
 data/*.dta
 data/*.csv
+!data/data.csv
 data/*.txt
 data/*.db
 # Python files
